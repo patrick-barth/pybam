@@ -1,5 +1,7 @@
 # pybam
 #### A simple, 100% python, BAM file reader.
+Converted to Python3.
+Currently only Dynamic Parsing works.
 
 pybam is a fast all-python module than you can copy-paste into your code to read a BAM file. Upon loading a BAM file, pybam will parse the header information, and act as a generator to return alignment/read information sequentially as it walks through the file. If you do not need to use BAM indexes, pybam is probably the fastest and simplest BAM parser out there, particularly if run under PyPy.
 

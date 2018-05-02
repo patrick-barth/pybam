@@ -1,4 +1,10 @@
 '''
+Pybam from commit ba460f1 converted for Python3 by Hannes Luidalepp.
+Currently only dynamic parsing is functional.
+http://github.com/luidale/pybam
+
+Original description:
+
 Awesome people who have directly contributed to the project:
 Jon Palmer - Bug finder & advice on project direction
 Mahmut Uludag - Bug finder
@@ -110,7 +116,7 @@ Github:     http://github.com/JohnLonginotto/pybam
 [ Parse Words (hah) ]'''
 wat += '\n'+''.join([('\n===============================================================================================\n\n  ' if code is 'file_alignments_read' or code is 'sam' else '  ')+(code+' ').ljust(25,'-')+description+'\n' for code,description in sorted(parse_codes.items())]) + '\n'
 
-class read:
+class read():
     '''
     [ Dynamic Parser Example ]
     for alignment in pybam.read('/my/data.bam'):
@@ -148,12 +154,13 @@ class read:
         self.file_chromosome_lengths = {}
 
         if fields is not False:
+            print(fields)
             if type(fields) is not list or len(fields) is 0:
                 raise PybamError('\n\nFields for the static parser must be provided as a non-empty list. You gave a ' + str(type(fields)) + '\n')
             else:
                 for field in fields:
                     if field.startswith('sam') or field.startswith('bam'):
-                        if field not in parse_codes.keys():
+                        if field not in list(parse_codes.keys()):
                             raise PybamError('\n\nStatic parser field "' + str(field) + '" from fields ' + str(fields) + ' is not known to this version of pybam!\nPrint "pybam.wat" to see available field names with explinations.\n')
                     else:
                         raise PybamError('\n\nStatic parser field "' + str(field) + '" from fields ' + str(fields) + ' does not start with "sam" or "bam" and thus is not an avaliable field for the static parsing.\nPrint "pybam.wat" in interactive python to see available field names with explinations.\n')
@@ -181,10 +188,9 @@ class read:
 
             self.file_name = os.path.basename(os.path.realpath(self._file.name))
             self.file_directory = os.path.dirname(os.path.realpath(self._file.name))
-
-            if magic == 'BAM\1':
+            if magic == b'BAM\1':
                 # The user has passed us already unzipped BAM data! Job done :)
-                data = 'BAM\1' + self._file.read(35536)
+                data = b'BAM\1' + self._file.read(35536)
                 self.file_bytes_read += len(data)
                 self.file_decompressor = 'None'
                 while data:
@@ -193,9 +199,9 @@ class read:
                     self.file_bytes_read += len(data)
                 self._file.close()
                 DEVNULL.close()
-                raise StopIteration
+                return
 
-            elif magic == "\x1f\x8b\x08\x04":  # The user has passed us compressed gzip/bgzip data, which is typical for a BAM file
+            elif magic == b"\x1f\x8b\x08\x04":  # The user has passed us compressed gzip/bgzip data, which is typical for a BAM file
                 # use custom decompressor if provided:
                 if decompressor is not False and decompressor is not 'internal':
                     if type(f) is str: self._subprocess = subprocess.Popen(                                    decompressor.replace('{}',f),    shell=True, stdout=subprocess.PIPE, stderr=DEVNULL)
@@ -209,7 +215,7 @@ class read:
                         self.file_bytes_read += len(data)
                     self._file.close()
                     DEVNULL.close()
-                    raise StopIteration
+                    return
 
                 # else look for pigz or gzip:
                 else:
@@ -222,8 +228,8 @@ class read:
                             self._subprocess = subprocess.Popen(["gzip"],stdin=DEVNULL,stdout=DEVNULL,stderr=DEVNULL)
                             if self._subprocess.returncode is None: self._subprocess.kill()
                             use = 'gzip'
-                        except OSError: use = 'internal'
-
+                        except OSError: 
+                            use = 'internal'
                     if use is not 'internal' and decompressor is not 'internal':
                         if type(f) is str: self._subprocess = subprocess.Popen([                                   use , '--decompress','--stdout',       f           ], stdout=subprocess.PIPE, stderr=DEVNULL)
                         else:              self._subprocess = subprocess.Popen('{ printf "'+magic+'"; cat; } | ' + use + ' --decompress  --stdout', stdin=f, shell=True, stdout=subprocess.PIPE, stderr=DEVNULL)
@@ -238,7 +244,7 @@ class read:
                                 self.file_bytes_read += len(data)
                             self._file.close()
                             DEVNULL.close()
-                            raise StopIteration
+                            return
 
                     # Python's gzip module can't read from a stream that doesn't support seek(), and the zlib module cannot read the bgzip format without a lot of help:
                     self.file_decompressor = 'internal'
@@ -256,7 +262,7 @@ class read:
                             bs = 0
                         magic = raw_data[bs:bs+4]
                         if not magic: break # a child's heart
-                        if magic != "\x1f\x8b\x08\x04": raise PybamError('\n\nThe input file is not in a format I understand. First four bytes: ' + repr(magic) + '\n')
+                        if magic != b"\x1f\x8b\x08\x04": raise PybamError('\n\nThe input file is not in a format I understand. First four bytes: ' + repr(magic) + '\n')
                         try:
                             more_bs = bs + unpack("<H", raw_data[bs+16:bs+18])[0] +1
                             internal_cache.append(decompress(raw_data[bs+18:more_bs-8],-15))
@@ -278,6 +284,7 @@ class read:
                             bs = bs+16+subfield_len+block_size-extra_len-19+8
                             zipped_data = header_data + raw_data + crc_data
                             internal_cache.append(decompress(zipped_data,47)) # 31 works the same as 47.
+
                             # Although the following in the bgzip code from biopython, its not needed if you let zlib decompress the whole zipped_data, header and crc, because it checks anyway (in C land)
                             # I've left the manual crc checks in for documentation purposes:
                             '''
@@ -291,13 +298,14 @@ class read:
                             '''
                         blocks_left_to_grab -= 1
                         if blocks_left_to_grab == 0:
-                            yield ''.join(internal_cache)
+                            yield b''.join(internal_cache)
                             internal_cache = []
                             blocks_left_to_grab = 50
                     self._file.close()
                     DEVNULL.close()
-                    if internal_cache != '': yield ''.join(internal_cache)
-                    raise StopIteration
+                    if internal_cache != b'':
+                        yield b''.join(internal_cache)
+                    return
 
             elif decompressor is not False and decompressor is not 'internal':
                 # It wouldn't be safe to just print to the shell four random bytes from the beginning of a file, so instead it's
@@ -316,7 +324,7 @@ class read:
                     self.file_bytes_read += len(data)
                 self._file.close()
                 DEVNULL.close()
-                raise StopIteration
+                return
             else:
                 raise PybamError('\n\nThe input file is not in a format I understand. First four bytes: ' + repr(magic) + '\n')
 
@@ -324,21 +332,21 @@ class read:
         self._generator = generator()
 
         ## So lets parse the BAM header:
-        header_cache = ''
-        while len(header_cache) < 8: header_cache += next(self._generator)
-
+        header_cache = b''
+        while len(header_cache) < 4:
+            header_cache += next(self._generator)
         p_from = 0; p_to = 4
-        if header_cache[p_from:p_to] != 'BAM\1':
+        if header_cache[p_from:p_to] != b'BAM\x01':
             raise PybamError('\n\nInput file ' + self.file_name + ' does not appear to be a BAM file.\n')
 
         ## Parse the BAM header:
         p_from = p_to; p_to += 4
         length_of_header = unpack('<i',header_cache[p_from:p_to])[0]
         p_from = p_to; p_to += length_of_header
-        while len(header_cache) < p_to: header_cache += next(self._generator)
+        while len(header_cache) < p_to: header_cache += str(next(self._generator))
         self.file_header = header_cache[p_from:p_to]
         p_from = p_to; p_to += 4
-        while len(header_cache) < p_to: header_cache += next(self._generator)
+        while len(header_cache) < p_to: header_cache += str(next(self._generator))
         number_of_reference_sequences = unpack('<i',header_cache[p_from:p_to])[0]
         
         for _ in range(number_of_reference_sequences):
@@ -347,23 +355,26 @@ class read:
             l_name = unpack('<l',header_cache[p_from:p_to])[0]
             p_from = p_to; p_to += l_name
             while len(header_cache) < p_to: header_cache += next(self._generator)
-            self.file_chromosomes.append(header_cache[p_from:p_to -1])
+            self.file_chromosomes.append(header_cache[p_from:p_to -1].decode('ascii'))
             p_from = p_to; p_to += 4
             while len(header_cache) < p_to: header_cache += next(self._generator)
             self.file_chromosome_lengths[self.file_chromosomes[-1]] = unpack('<l',header_cache[p_from:p_to])[0]
 
         self.file_bytes_read = p_to
-        self.file_binary_header = buffer(header_cache[:p_to])
+        self.file_binary_header = memoryview(header_cache[:p_to])
         header_cache = header_cache[p_to:]
 
         # A quick check to make sure the header of this BAM file makes sense:
         chromosomes_from_header = []
-        for line in self.file_header.split('\n'):
-            if line.startswith('@SQ\tSN:'):
-                chromosomes_from_header.append(line.split('\t')[1][3:])
+        for line in str(self.file_header).split('\\n'):
+            if line.startswith('@SQ\\tSN:'):
+                chromosomes_from_header.append(line.split('\\t')[1][3:])
         if chromosomes_from_header != self.file_chromosomes:
             raise PybamWarn('For some reason the BAM format stores the chromosome names in two locations,\n       the ASCII text header we all know and love, viewable with samtools view -H, and another special binary header\n       which is used to translate the chromosome refID (a number) into a chromosome RNAME when you do bam -> sam.\n\nThese two headers should always be the same, but apparently they are not:\nThe ASCII header looks like: ' + self.file_header + '\nWhile the binary header has the following chromosomes: ' + self.file_chromosomes + '\n')
-
+		
+        #HL - decoding header
+        self.file_header = self.file_header.decode()
+		
         ## Variable parsing:
         def new_entry(header_cache):
             cache = header_cache # we keep a small cache of X bytes of decompressed BAM data, to smoothen out disk access.
@@ -541,8 +552,8 @@ class read:
                 else:                             code += "\n        sam_seq = ''.join( [ dna_codes[dna >> 4] + dna_codes[dna & 0b1111]   for dna     in array('B', self.bam[_end_of_cigar : _end_of_seq])])[:sam_l_seq]"
 
             if 'sam_qual'        in dependencies:
-                if 'bam_qual'    in dependencies: code += "\n        sam_qual = ''.join( [                   chr(ord(quality) + 33)        for quality in            bam_qual ])"
-                else:                             code += "\n        sam_qual = ''.join( [                   chr(ord(quality) + 33)        for quality in            self.bam[_end_of_seq       : _end_of_qual  ]])"
+                if 'bam_qual'    in dependencies: code += "\n        sam_qual = b''.join( [                   chr(ord(quality) + 33)        for quality in            bam_qual ])"
+                else:                             code += "\n        sam_qual = b''.join( [                   chr(ord(quality) + 33)        for quality in            self.bam[_end_of_seq       : _end_of_qual  ]])"
 
             if 'sam_tags_list'        in dependencies:
                 code += '''
@@ -586,15 +597,18 @@ class read:
                 'py4py':py4py,
                 'cigar_codes':cigar_codes
             }
-            exec code in exec_dict            # exec() compiles "code" to real code, creating the "parser" function and adding it to exec_dict['parser']
+            exec(code, exec_dict)            # exec() compiles "code" to real code, creating the "parser" function and adding it to exec_dict['parser']
             return exec_dict['parser']
 
         if fields:
             static_parser = compile_parser(self,fields)(self)
-            def next_read(): return next(static_parser)
-        else:
             def next_read(): return next(self._new_entry)
+        else:
+            def next_read(): return next(self._new_entry)		            
         self.next = next_read
+		
+    def __next__(self):
+        return next(self._new_entry)
 
     def __iter__(self): return self
     def __str__(self):  return self.sam
@@ -658,7 +672,7 @@ class read:
     @property
     def sam_tlen(self):         return unpack( '<i', self.bam[ 32                     : 36                        ] )[0]
     @property
-    def sam_qname(self):        return               self.bam[ 36                     : self._end_of_qname -1     ] # -1 to remove trailing NUL byte
+    def sam_qname(self):        return               self.bam[ 36                     : self._end_of_qname -1     ].decode() # -1 to remove trailing NUL byte
     @property
     def sam_cigar_list(self):   return          [          (cig >> 4  , cigar_codes[cig & 0b1111] ) for cig     in array('I', self.bam[self._end_of_qname     : self._end_of_cigar ])]
     @property
@@ -666,17 +680,18 @@ class read:
     @property
     def sam_seq(self):          return ''.join( [ dna_codes[dna >> 4] +   dna_codes[dna & 0b1111]   for dna     in array('B', self.bam[self._end_of_cigar     : self._end_of_seq   ])])[:self.sam_l_seq] # As DNA is 4 bits packed 2-per-byte, there might be a trailing '0000', so we can either
     @property
-    def sam_qual(self):         return ''.join( [                      chr(ord(quality) + 33)       for quality in            self.bam[self._end_of_seq       : self._end_of_qual  ]])
+    def sam_qual(self):  
+        return ''.join( [                      chr(quality + 33)       for quality in            self.bam[self._end_of_seq       : self._end_of_qual  ]])
     @property
     def sam_tags_list(self):
         result = []
         offset = self._end_of_qual
         while offset != len(self.bam):
-            tag_name = self.bam[offset:offset+2]
-            tag_type = self.bam[offset+2]
+            tag_name = self.bam[offset:offset+2].decode()
+            tag_type = chr(self.bam[offset+2])			
             if tag_type == 'Z':
-                offset_end = self.bam.index('\x00',offset+3)+1
-                tag_data = self.bam[offset+3:offset_end-1]
+                offset_end = self.bam.index(b'\x00',offset+3)+1
+                tag_data = self.bam[offset+3:offset_end-1].decode()
             elif tag_type in CtoPy:
                 offset_end = offset+3+py4py[tag_type]
                 tag_data = unpack(CtoPy[tag_type],self.bam[offset+3:offset_end])[0]
@@ -684,10 +699,10 @@ class read:
                 offset_end = offset+8+(unpack('<i',self.bam[offset+4:offset+8])[0]*py4py[self.bam[offset+3]])
                 tag_data = array(self.bam[offset+3] , self.bam[offset+8:offset_end] )
             else:
-                print 'PYBAM ERROR: I dont know how to parse BAM tags in this format: ',repr(tag_type)
-                print '             This is simply because I never saw this kind of tag during development.'
-                print '             If you could mail the following chunk of text to john at john.uk.com, ill fix this up :)'
-                print repr(tag_type),repr(self.bam[offset+3:end])
+                print('PYBAM ERROR: I dont know how to parse BAM tags in this format: ',repr(tag_type))
+                print('             This is simply because I never saw this kind of tag during development.')
+                print('             If you could mail the following chunk of text to john at john.uk.com, ill fix this up :)')
+                print(repr(tag_type),repr(self.bam[offset+3:end]))
                 exit()
             result.append((tag_name,tag_type,tag_data))
             offset = offset_end
@@ -706,7 +721,7 @@ class read:
     @property
     def sam_rnext(self):        return '*' if self.sam_next_refID < 0 else self.file_chromosomes[self.sam_next_refID]
     @property
-    def sam(self):              return (
+    def sam(self):        return (
             self.sam_qname                                                     + '\t' +
             str(self.sam_flag)                                                 + '\t' +
             self.sam_rname                                                     + '\t' +
